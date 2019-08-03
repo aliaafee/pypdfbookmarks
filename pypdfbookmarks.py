@@ -2,6 +2,8 @@ import sys
 import getopt
 import csv
 import code
+import json
+
 from PyPDF2 import PdfFileReader, PdfFileWriter
 
 
@@ -120,6 +122,33 @@ class BookmarkNode(object):
             print("[{}] {}".format(num, child))
 
 
+    def get_dict(self):
+        return {
+            'title' : self.title,
+            'page_number' : self.page_number,
+            'children' : [child.get_dict() for child in self.children]
+        }
+
+
+    def get_json(self):
+        return json.dumps(self.get_dict(), indent=4)
+
+
+    def load_dict(self, bookmarks_dict):
+        self.title = bookmarks_dict['title']
+        self.page_number = bookmarks_dict['page_number']
+        self.children = []
+        for child_dict in bookmarks_dict['children']:
+            child = BookmarkNode()
+            self.add_child(child)
+            child.load_dict(child_dict)
+
+    
+    def load_json(self, bookmarks_json):
+        bookmarks_dict = json.loads(bookmarks_json)
+        self.load_dict(bookmarks_dict)
+
+
     def __repr__(self):
         """String representation of object"""
         return "{} -> p{}{}".format(
@@ -174,12 +203,29 @@ def save_pdf(filename):
     write_pdf(tree, pdfreader, filename)
 
 
+def save_bookmarks(json_filename):
+    """Save bookmarks to json file"""
+    global tree
+    with open(json_filename, 'w') as json_file:
+        json_file.write(tree.get_json())
+
+
+def load_bookmarks(json_filename):
+    """Load bookmarkss from json file"""
+    global tree
+    with open(json_filename, 'r') as json_file:
+        json_str = json_file.read()
+        tree.load_json(json_str)
+
+
 def pypdfbm_help():
     print("'load_pdf(filename)' to load a pdf file")
     print("'tree' is an object of type BookmarkNode.")
     print("       dir(tree) for list of available methods.")
     print("'save_pdf(filename)' to save currently open pdf to new")
     print("       file using the bookmarks tree in 'tree'.")
+    print("'save_bookmarks(filename)' to JSON file'")
+    print("'load_bookmarks(filename)' from JSON file'")
     print("'exit()' to exit.")
     print("")
 
