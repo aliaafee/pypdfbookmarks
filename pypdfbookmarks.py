@@ -5,6 +5,9 @@ import code
 import json
 
 from PyPDF2 import PdfFileReader, PdfFileWriter
+from PyPDF2.generic import ByteStringObject, TextStringObject
+
+FALLBACK_ENCODING = "utf-8" #Use this if bookmark encoding could not be guessed
 
 
 class BookmarkNode(object):
@@ -86,13 +89,17 @@ class BookmarkNode(object):
             for item in outlines:
                 if type(item) is not list:
                     current_node = BookmarkNode()
-                    current_node.title = item.title
+                    if type(item.title) is ByteStringObject:
+                        current_node.title = item.title.decode(FALLBACK_ENCODING, "backslashreplace")
+                    else:
+                        current_node.title = str(item.title)
+                    current_node.title = current_node.title.strip()
                     current_node.page_number = pg_id_num_map[item.page.idnum] + 1
                     node.add_child(current_node)
                 else:
                     _generate_tree(current_node, item)
 
-        _generate_tree(self, pdfreader.outlines)
+        _generate_tree(self, pdfreader.getOutlines())
 
 
     def add_to_pdf(self, pdfwriter):
@@ -125,7 +132,7 @@ class BookmarkNode(object):
     def get_dict(self):
         return {
             'title' : self.title,
-            'page_number' : self.page_number,
+            'page_number' : self.page_number + 1,
             'children' : [child.get_dict() for child in self.children]
         }
 
@@ -136,7 +143,7 @@ class BookmarkNode(object):
 
     def load_dict(self, bookmarks_dict):
         self.title = bookmarks_dict['title']
-        self.page_number = bookmarks_dict['page_number']
+        self.page_number = bookmarks_dict['page_number'] - 1
         self.children = []
         for child_dict in bookmarks_dict['children']:
             child = BookmarkNode()
@@ -159,15 +166,20 @@ class BookmarkNode(object):
 
 
 
-def write_pdf(bookmarks_tree, pdfreader, output_filename):
+def write_pdf(bookmarks_tree, pdfreader, output_filename, start_page=None, end_page=None):
     """Write the pdfreader to new file using the given bookmarks tree"""
     output = PdfFileWriter()
     
-    for page in pdfreader.pages:
-        output.addPage(page)
+    print("Copying pages...")
+    start_page = 0 if start_page is None else start_page - 1
+    end_page = pdfreader.getNumPages() - 1 if end_page is None else end_page - 1
+    for page_number in range(start_page, end_page + 1):
+        output.addPage(pdfreader.getPage(page_number))
 
+    print("Adding Bookmarks...")
     bookmarks_tree.add_to_pdf(output)
 
+    print("Writing file...")
     with open(output_filename, "wb") as output_file:
         output.write(output_file)
 
@@ -190,8 +202,10 @@ def load_pdf(filename):
     tree.load_from_pdf(pdfreader)
 
 
-def save_pdf(filename):
-    """Save the open pdf to new file, using the bookmarks tree in 'tree'"""
+def save_pdf(filename, start_page=None, end_page=None):
+    """Save the open pdf to new file, using the bookmarks tree in 'tree'
+       optional start_page and end_page to trip the pdf. Note that trimming
+       the pdf does not change any of the bookmark page numbers."""
     global pdfreader, tree
     if pdfreader is None:
         print("Open a pdf document fisrt")
@@ -200,7 +214,7 @@ def save_pdf(filename):
     if not(pdfreader and tree):
         print("Load a pdf using load_pdf(filename)")
         return
-    write_pdf(tree, pdfreader, filename)
+    write_pdf(tree, pdfreader, filename, start_page, end_page)
 
 
 def save_bookmarks(json_filename):
